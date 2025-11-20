@@ -1,0 +1,31 @@
+version: "1.0"
+model: "AdaptiveVAE"
+
+vae:
+  input_dim: 60          # 6 sensors × 10 timesteps
+  hidden_dim: 32
+  latent_dim: 8
+  dropout: 0.1
+  learning_rate: 0.001
+  beta: 1.0              # KL weight
+
+online:
+  update_freq: 100       # Update every 100 sequences
+  momentum: 0.9          # EMA for drift
+  threshold_quantile: 0.95
+
+iforest:
+  n_estimators: 50
+  replace_rate: 0.1
+  random_state: 42
+  max_history: 1000
+  threshold_quantile: 0.95
+
+streaming:
+  window_size: 10
+  stride: 1
+  batch_size: 32
+
+evaluation:
+  reconstruction_threshold: "per-room 95th percentile"
+  shap_sample_size: 100

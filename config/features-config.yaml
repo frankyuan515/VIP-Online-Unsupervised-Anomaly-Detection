@@ -1,0 +1,32 @@
+version: "1.0"
+description: "Sensor features for Adaptive VAE (Sony-approved)"
+
+context:
+  timestamp: "UTC datetime index"
+  resourceid: "Room identifier (masked in model)"
+
+sensors:
+  - name: "temperature_value"
+    unit: "°C"
+    description: "Room temperature"
+    scaling: "per-room MinMax"
+  - name: "humidity_value"
+    unit: "%"
+    description: "Relative humidity"
+  - name: "co2_value"
+    unit: "ppm"
+    description: "CO₂ concentration"
+  - name: "light_value"
+    unit: "lux"
+    description: "Ambient light"
+  - name: "radon_value"
+    unit: "Bq/m³"
+    description: "Radon level"
+  - name: "airquality_value"
+    unit: "index"
+    description: "Composite air quality"
+
+metadata:
+  source: "Nimway preprocessed dataset"
+  window_size: 10
+  sampling_rate: "5 min"

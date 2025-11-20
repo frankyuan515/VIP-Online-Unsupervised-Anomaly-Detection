@@ -1,0 +1,12 @@
+data/*.csv
+data/*.json
+models/*.pkl
+models/*.pt
+models/vae_checkpoints/
+__pycache__/
+*.pyc
+venv/
+.env
+.DS_Store
+*.tex
+*.pdf
