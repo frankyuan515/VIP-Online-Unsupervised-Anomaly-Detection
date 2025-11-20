@@ -1,83 +1,131 @@
 import numpy as np
 from sklearn.ensemble import IsolationForest
 
+
 class AdaptiveIsolationForest:
     """
-    Lightweight streaming-friendly Adaptive Isolation Forest
-    inspired by BWOAIF (Hannák et al. 2023).
+    Lightweight streaming-friendly Adaptive Isolation Forest.
 
-    Features:
-    - rolling tree replacement
-    - online adaptation
-    - ensemble scoring
+    Idea:
+    - Maintain an ensemble of IsolationForest models (each trained on recent data).
+    - On each update:
+        * If ensemble is not full yet -> add new trees.
+        * If full -> randomly replace a fraction of trees with models trained on new data.
+    - The anomaly score is the average (inverted) score across all trees.
+
+    This is a pragmatic online-ish baseline to compare with the VAE.
     """
 
-    def __init__(self, n_estimators=50, replace_rate=0.1, random_state=42):
+    def __init__(
+        self,
+        n_estimators: int = 50,
+        replace_rate: float = 0.1,
+        contamination: float = 0.05,
+        random_state: int = 42,
+    ):
         self.n_estimators = n_estimators
-        self.replace_rate = replace_rate     # % of trees replaced each update
+        self.replace_rate = replace_rate
+        self.contamination = contamination
         self.random_state = random_state
 
-        self.models = []  # list of IsolationForest instances
-        self.fitted = False
+        # We treat each IsolationForest here as a "sub-model" in an ensemble.
+        self.models = []  # list[IsolationForest]
+        self._rng = np.random.RandomState(random_state)
 
-    def partial_fit(self, X):
+    # ------------------------------------------------------------------
+    # Internal helper: fit one IsolationForest on X
+    # ------------------------------------------------------------------
+    def _fit_one(self, X: np.ndarray) -> IsolationForest:
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+
+        seed = self._rng.randint(0, 10_000)
+        model = IsolationForest(
+            n_estimators=1,
+            contamination=self.contamination,
+            random_state=seed,
+        )
+        model.fit(X)
+        return model
+
+    # ------------------------------------------------------------------
+    # Initial fit: fill the ensemble with trees trained on X
+    # ------------------------------------------------------------------
+    def fit(self, X: np.ndarray):
         """
-        Incremental update:
-        - replace oldest trees
-        - train new ones on new batch
+        Initialize the ensemble using the provided batch X.
+        After this, you can call update(X_new) for online adaptation.
         """
-        X = np.array(X)
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
 
-        # First-time training: create full forest
-        if not self.fitted:
-            for _ in range(self.n_estimators):
-                model = IsolationForest(
-                    n_estimators=1,
-                    max_samples='auto',
-                    contamination='auto',
-                    random_state=np.random.randint(0, 999999)
-                )
-                model.fit(X)
-                self.models.append(model)
-            self.fitted = True
-            return
+        self.models = []
+        # If n_estimators is large, this may be slow; but OK for small tests.
+        for _ in range(self.n_estimators):
+            self.models.append(self._fit_one(X))
+        return self
 
-        # Replace "replace_rate" fraction of trees
-        k = max(1, int(self.n_estimators * self.replace_rate))
-
-        # Remove oldest trees
-        self.models = self.models[k:]
-
-        # Add new trees trained on new data
-        for _ in range(k):
-            model = IsolationForest(
-                n_estimators=1,
-                max_samples='auto',
-                contamination='auto',
-                random_state=np.random.randint(0, 999999)
-            )
-            model.fit(X)
-            self.models.append(model)
-
-    def score_samples(self, X):
+    # ------------------------------------------------------------------
+    # Online update: adapt ensemble to new batch X
+    # ------------------------------------------------------------------
+    def update(self, X: np.ndarray):
         """
-        Average anomaly score across ensemble.
-        (IsolationForest returns negative scores → convert to positive scale)
+        Update the ensemble given new data X.
+        If the ensemble is not full yet, we just add trees.
+        Otherwise, we randomly replace a fraction of existing trees.
         """
-        X = np.array(X)
-        scores = []
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
 
-        for model in self.models:
-            s = -model.score_samples(X)  # larger = more anomalous
-            scores.append(s)
+        if not self.models:
+            return self.fit(X)
 
-        return np.mean(scores, axis=0)
+        # Number of trees to replace
+        k = max(1, int(self.replace_rate * self.n_estimators))
+        indices = self._rng.choice(len(self.models), size=k, replace=False)
 
-    def predict(self, X, threshold=0.6):
+        for idx in indices:
+            self.models[idx] = self._fit_one(X)
+
+        return self
+
+    # ------------------------------------------------------------------
+    # Scoring
+    # ------------------------------------------------------------------
+    def score_samples(self, X: np.ndarray) -> np.ndarray:
+        """
+        Return anomaly scores. Higher = more anomalous.
+
+        IsolationForest.score_samples by default gives higher = more normal,
+        so we invert (negative).
+        """
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+
+        if not self.models:
+            raise RuntimeError("AdaptiveIsolationForest has no fitted models yet.")
+
+        scores_list = []
+        for m in self.models:
+            s = m.score_samples(X)  # higher = more normal
+            scores_list.append(-s)  # invert so higher = more anomaly
+
+        scores = np.mean(scores_list, axis=0)
+        return scores
+
+    def predict(self, X: np.ndarray, threshold: float = 0.6):
+        """
+        Simple thresholding on scores.
+        Returns labels (1 = anomaly, 0 = normal) and scores.
+        """
         scores = self.score_samples(X)
-        labels = (scores > threshold).astype(int)  # 1 = anomaly
+        labels = (scores > threshold).astype(int)
         return labels, scores
-    
+
     def get_shap_model(self):
         """
         Return a single IsolationForest instance suitable for SHAP.

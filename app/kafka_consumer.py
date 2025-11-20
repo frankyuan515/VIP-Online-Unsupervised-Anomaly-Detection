@@ -15,9 +15,9 @@ consumer = KafkaConsumer(
     "nimway-sensors",
     bootstrap_servers=["localhost:9092"],
     value_deserializer=lambda x: json.loads(x.decode("utf-8")),
-    auto_offset_reset="earliest",
+    auto_offset_reset="latest", #earlist
     enable_auto_commit=True,
-    group_id="vae-if-consumer",
+    group_id="vae-if-consumer-v2", #vae-if-consumer
 )
 
 log_path = Path("data/detections_log.csv")
