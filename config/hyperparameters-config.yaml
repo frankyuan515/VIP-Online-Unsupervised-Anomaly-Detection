@@ -6,7 +6,7 @@ vae:
   hidden_dim: 32
   latent_dim: 8
   dropout: 0.1
-  learning_rate: 0.001
+  learning_rate: 0.0005
   beta: 1.0              # KL weight
 
 online:
